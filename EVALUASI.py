@@ -1,3 +1,4 @@
+import hashlib
 import hmac
 import json
 import os
@@ -7,6 +8,10 @@ import zipfile
 from datetime import time as datetime_time
 from io import BytesIO
 import re
+import secrets
+import smtplib
+import ssl
+from email.message import EmailMessage
 from xml.sax.saxutils import escape
 
 import streamlit as st
@@ -352,8 +357,378 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# Password admin (tetap). Untuk mengganti, ubah nilai di bawah ini.
-PASSWORD_ADMIN = "Bondan13"
+# ==========================================
+# KEAMANAN ADMIN: password, email terdaftar, reset password
+# ==========================================
+# Kode awal hanya dipakai SEKALI untuk registrasi pertama (membuat password
+# dan mendaftarkan email). Setelah itu login memakai password buatan admin.
+KODE_AWAL_ADMIN = "Bondan13"
+MAKS_PERCOBAAN = 5
+JEDA_RESET_MENIT = 10
+MIN_PANJANG_PASSWORD = 8
+ADMIN_KEAMANAN_FILE = os.path.join(os.path.dirname(__file__), "admin_keamanan.json")
+ADMIN_KEAMANAN_LOCK = threading.Lock()
+POLA_EMAIL = re.compile(r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$")
+
+
+def _hash_password(password, salt=None, iterasi=310_000):
+    salt = salt if salt is not None else secrets.token_bytes(16)
+    hasil = hashlib.pbkdf2_hmac(
+        "sha256", password.encode("utf-8"), salt, iterasi
+    )
+    return {"salt": salt.hex(), "hash": hasil.hex(), "iterasi": iterasi}
+
+
+def _cocok_password(password, data_hash):
+    hasil = hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        bytes.fromhex(data_hash["salt"]),
+        int(data_hash["iterasi"]),
+    )
+    return hmac.compare_digest(hasil.hex(), data_hash["hash"])
+
+
+def _baca_keamanan_admin():
+    if not os.path.exists(ADMIN_KEAMANAN_FILE):
+        return None
+    try:
+        with open(ADMIN_KEAMANAN_FILE, "r", encoding="utf-8") as file:
+            data = json.load(file)
+        data["email"] = str(data["email"])
+        for kunci in ("salt", "hash", "iterasi"):
+            data["password"][kunci]
+        data["gagal"] = int(data.get("gagal", 0))
+        data["wajib_ganti"] = bool(data.get("wajib_ganti", False))
+        data["reset_terakhir"] = data.get("reset_terakhir")
+        return data
+    except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError, ValueError) as error:
+        raise RuntimeError(
+            f"Data keamanan admin tidak dapat dibaca: {error}"
+        ) from error
+
+
+def _tulis_keamanan_admin(data):
+    temporary_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=os.path.dirname(ADMIN_KEAMANAN_FILE),
+            prefix=".admin_keamanan_",
+            suffix=".tmp",
+            delete=False,
+        ) as file:
+            temporary_path = file.name
+            json.dump(data, file)
+        os.replace(temporary_path, ADMIN_KEAMANAN_FILE)
+    except (OSError, TypeError, ValueError) as error:
+        if temporary_path and os.path.exists(temporary_path):
+            try:
+                os.remove(temporary_path)
+            except OSError:
+                pass
+        raise RuntimeError(f"Data keamanan admin gagal disimpan: {error}") from error
+
+
+def load_keamanan_admin():
+    with ADMIN_KEAMANAN_LOCK:
+        return _baca_keamanan_admin()
+
+
+def _email_valid(email):
+    return bool(POLA_EMAIL.match(email.strip()))
+
+
+def _samarkan_email(email):
+    nama, _, domain = email.partition("@")
+    return f"{nama[:1]}{'*' * max(len(nama) - 1, 3)}@{domain}"
+
+
+def daftarkan_admin_awal(kode_awal, email, password_baru):
+    if not hmac.compare_digest(
+        kode_awal.strip().encode("utf-8"), KODE_AWAL_ADMIN.encode("utf-8")
+    ):
+        return "Kode awal salah."
+    if not _email_valid(email):
+        return "Format email tidak valid."
+    if len(password_baru) < MIN_PANJANG_PASSWORD:
+        return f"Password minimal {MIN_PANJANG_PASSWORD} karakter."
+    if password_baru == KODE_AWAL_ADMIN:
+        return "Password baru tidak boleh sama dengan kode awal."
+    with ADMIN_KEAMANAN_LOCK:
+        if _baca_keamanan_admin() is not None:
+            return "Admin sudah terdaftar. Silakan login."
+        _tulis_keamanan_admin(
+            {
+                "email": email.strip(),
+                "password": _hash_password(password_baru),
+                "gagal": 0,
+                "wajib_ganti": False,
+                "reset_terakhir": None,
+            }
+        )
+    return None
+
+
+def coba_login_admin(password):
+    with ADMIN_KEAMANAN_LOCK:
+        data = _baca_keamanan_admin()
+        if data is None:
+            return "belum_terdaftar", 0
+        if data["gagal"] >= MAKS_PERCOBAAN:
+            return "terkunci", 0
+        if _cocok_password(password, data["password"]):
+            if data["gagal"]:
+                data["gagal"] = 0
+                _tulis_keamanan_admin(data)
+            return "ok", MAKS_PERCOBAAN
+        data["gagal"] += 1
+        _tulis_keamanan_admin(data)
+        sisa = MAKS_PERCOBAAN - data["gagal"]
+        return ("terkunci" if sisa <= 0 else "salah"), max(sisa, 0)
+
+
+def ubah_password_admin(password_lama, password_baru):
+    if len(password_baru) < MIN_PANJANG_PASSWORD:
+        return f"Password baru minimal {MIN_PANJANG_PASSWORD} karakter."
+    if password_baru == password_lama:
+        return "Password baru harus berbeda dari password lama."
+    with ADMIN_KEAMANAN_LOCK:
+        data = _baca_keamanan_admin()
+        if data is None:
+            return "Data admin belum terdaftar."
+        if not _cocok_password(password_lama, data["password"]):
+            return "Password saat ini salah."
+        data["password"] = _hash_password(password_baru)
+        data["wajib_ganti"] = False
+        data["gagal"] = 0
+        _tulis_keamanan_admin(data)
+    return None
+
+
+def ubah_email_admin(password, email_baru):
+    if not _email_valid(email_baru):
+        return "Format email tidak valid."
+    with ADMIN_KEAMANAN_LOCK:
+        data = _baca_keamanan_admin()
+        if data is None:
+            return "Data admin belum terdaftar."
+        if not _cocok_password(password, data["password"]):
+            return "Password saat ini salah."
+        data["email"] = email_baru.strip()
+        _tulis_keamanan_admin(data)
+    return None
+
+
+def _ambil_pengaturan(nama, default=None):
+    nilai = os.getenv(nama)
+    if nilai:
+        return nilai
+    try:
+        return st.secrets[nama]
+    except Exception:
+        return default
+
+
+def kirim_email(tujuan, subjek, isi):
+    host = _ambil_pengaturan("SMTP_HOST")
+    pengguna = _ambil_pengaturan("SMTP_USER")
+    sandi = _ambil_pengaturan("SMTP_PASSWORD")
+    if not (host and pengguna and sandi):
+        raise RuntimeError(
+            "Pengiriman email belum dikonfigurasi. Isi SMTP_HOST, SMTP_USER, "
+            "dan SMTP_PASSWORD di Streamlit Secrets."
+        )
+    port = int(_ambil_pengaturan("SMTP_PORT", 587))
+    pengirim = _ambil_pengaturan("SMTP_FROM", pengguna)
+
+    pesan = EmailMessage()
+    pesan["Subject"] = subjek
+    pesan["From"] = pengirim
+    pesan["To"] = tujuan
+    pesan.set_content(isi)
+    try:
+        konteks = ssl.create_default_context()
+        if port == 465:
+            with smtplib.SMTP_SSL(host, port, context=konteks, timeout=20) as server:
+                server.login(pengguna, sandi)
+                server.send_message(pesan)
+        else:
+            with smtplib.SMTP(host, port, timeout=20) as server:
+                server.starttls(context=konteks)
+                server.login(pengguna, sandi)
+                server.send_message(pesan)
+    except (smtplib.SMTPException, OSError) as error:
+        raise RuntimeError(f"Email gagal dikirim: {error}") from error
+
+
+def reset_password_admin():
+    # Hanya boleh jika sudah terkunci (5x salah). Password sementara
+    # SELALU dikirim ke email terdaftar, bukan ke alamat lain.
+    with ADMIN_KEAMANAN_LOCK:
+        data = _baca_keamanan_admin()
+        if data is None:
+            return "Data admin belum terdaftar."
+        if data["gagal"] < MAKS_PERCOBAAN:
+            return "Reset password hanya tersedia setelah 5 kali salah password."
+        if data["reset_terakhir"]:
+            sejak = pd.Timestamp.now(tz="UTC") - pd.Timestamp(data["reset_terakhir"])
+            if sejak < pd.Timedelta(minutes=JEDA_RESET_MENIT):
+                sisa_menit = JEDA_RESET_MENIT - int(sejak.total_seconds() // 60)
+                return (
+                    "Permintaan reset baru saja dikirim. Coba lagi dalam "
+                    f"{sisa_menit} menit."
+                )
+        sementara = secrets.token_urlsafe(9)
+        kirim_email(
+            data["email"],
+            "Reset Password Admin - Evaluasi Pembelajaran SI UDBS",
+            "Permintaan reset password admin diterima setelah "
+            f"{MAKS_PERCOBAAN} kali salah memasukkan password.\n\n"
+            f"Password sementara Anda: {sementara}\n\n"
+            "Gunakan password ini untuk login, lalu Anda akan diminta membuat "
+            "password baru. Abaikan email ini jika bukan Anda yang memintanya.",
+        )
+        data["password"] = _hash_password(sementara)
+        data["wajib_ganti"] = True
+        data["gagal"] = 0
+        data["reset_terakhir"] = pd.Timestamp.now(tz="UTC").isoformat()
+        _tulis_keamanan_admin(data)
+    return None
+
+
+def tampilkan_setup_admin():
+    st.subheader("Registrasi Admin Pertama")
+    st.caption(
+        "Buat password dan daftarkan email admin. Email ini satu-satunya "
+        "tujuan pengiriman password sementara jika Anda terkunci."
+    )
+    with st.form("form_setup_admin"):
+        kode_awal = st.text_input("Kode awal", type="password")
+        email = st.text_input("Email admin", placeholder="nama@domain.com")
+        password_baru = st.text_input(
+            f"Password baru (minimal {MIN_PANJANG_PASSWORD} karakter)",
+            type="password",
+        )
+        konfirmasi = st.text_input("Ulangi password baru", type="password")
+        kirim = st.form_submit_button("Daftarkan Admin", type="primary")
+    if kirim:
+        if password_baru != konfirmasi:
+            st.error("Konfirmasi password tidak sama.")
+            return
+        try:
+            kesalahan = daftarkan_admin_awal(kode_awal, email, password_baru)
+        except RuntimeError as error:
+            st.error(str(error))
+            return
+        if kesalahan:
+            st.error(kesalahan)
+        else:
+            st.session_state["admin_logged_in"] = True
+            st.rerun()
+
+
+def tampilkan_login_admin(keamanan):
+    if keamanan["gagal"]:
+        st.caption(
+            f"Percobaan salah: {keamanan['gagal']} dari {MAKS_PERCOBAAN}."
+        )
+    col_pass, col_btn = st.columns([3, 1])
+    input_password = col_pass.text_input(
+        "Masukkan Password Admin:",
+        type="password",
+        placeholder="Password...",
+    )
+    if col_btn.button(" Login"):
+        try:
+            status, sisa = coba_login_admin(input_password.strip())
+        except RuntimeError as error:
+            st.error(str(error))
+            return
+        if status == "ok":
+            st.session_state["admin_logged_in"] = True
+            st.rerun()
+        elif status == "terkunci":
+            st.rerun()
+        else:
+            st.error(
+                f"Password salah. Sisa percobaan: {sisa} dari {MAKS_PERCOBAAN}."
+            )
+
+
+def tampilkan_reset_password(keamanan):
+    st.error(
+        f"Login dikunci setelah {MAKS_PERCOBAAN} kali salah password. "
+        "Reset password untuk melanjutkan."
+    )
+    st.write(
+        "Password sementara akan dikirim ke email terdaftar: "
+        f"**{_samarkan_email(keamanan['email'])}**"
+    )
+    if st.button("Kirim Password Sementara ke Email", type="primary"):
+        try:
+            kesalahan = reset_password_admin()
+        except RuntimeError as error:
+            st.error(str(error))
+            return
+        if kesalahan:
+            st.warning(kesalahan)
+        else:
+            st.success(
+                "Password sementara sudah dikirim ke email terdaftar. "
+                "Muat ulang halaman, lalu login dengan password tersebut."
+            )
+
+
+def tampilkan_form_ganti_password(wajib=False):
+    label_lama = "Password sementara" if wajib else "Password saat ini"
+    with st.form("form_ganti_password"):
+        lama = st.text_input(label_lama, type="password")
+        baru = st.text_input(
+            f"Password baru (minimal {MIN_PANJANG_PASSWORD} karakter)",
+            type="password",
+        )
+        konfirmasi = st.text_input("Ulangi password baru", type="password")
+        kirim = st.form_submit_button("Simpan Password Baru", type="primary")
+    if kirim:
+        if baru != konfirmasi:
+            st.error("Konfirmasi password tidak sama.")
+            return
+        try:
+            kesalahan = ubah_password_admin(lama, baru)
+        except RuntimeError as error:
+            st.error(str(error))
+            return
+        if kesalahan:
+            st.error(kesalahan)
+        else:
+            st.success("Password berhasil diganti.")
+            if wajib:
+                st.rerun()
+
+
+def tampilkan_pengaturan_keamanan(keamanan):
+    with st.expander("🔐 Keamanan Akun Admin"):
+        st.write(f"Email terdaftar: **{_samarkan_email(keamanan['email'])}**")
+        st.markdown("##### Ganti password")
+        tampilkan_form_ganti_password()
+        st.markdown("##### Ganti email terdaftar")
+        with st.form("form_ganti_email"):
+            password = st.text_input("Password saat ini", type="password")
+            email_baru = st.text_input("Email baru", placeholder="nama@domain.com")
+            kirim = st.form_submit_button("Simpan Email Baru")
+        if kirim:
+            try:
+                kesalahan = ubah_email_admin(password, email_baru)
+            except RuntimeError as error:
+                st.error(str(error))
+            else:
+                if kesalahan:
+                    st.error(kesalahan)
+                else:
+                    st.success("Email terdaftar berhasil diganti.")
+                    st.rerun()
 
 DATA_EVALUASI_FILE = os.path.join(os.path.dirname(__file__), "data_evaluasi.csv")
 PENGATURAN_EVALUASI_FILE = os.path.join(
@@ -1463,23 +1838,23 @@ elif mode == "Dashboard Laporan Prodi (Admin)":
     )
 
     # Autentikasi Password Admin
-    if not st.session_state["admin_logged_in"]:
-        col_pass, col_btn = st.columns([3, 1])
-        input_password = col_pass.text_input(
-            "Masukkan Password Admin:",
-            type="password",
-            placeholder="Password...",
-        )
+    try:
+        keamanan_admin = load_keamanan_admin()
+    except RuntimeError as error:
+        st.error(str(error))
+        st.stop()
 
-        if col_btn.button(" Login"):
-            if hmac.compare_digest(
-                input_password.strip().encode("utf-8"),
-                PASSWORD_ADMIN.encode("utf-8"),
-            ):
-                st.session_state["admin_logged_in"] = True
-                st.rerun()
-            else:
-                st.error("Password salah! Silakan coba lagi.")
+    if st.session_state["admin_logged_in"] and keamanan_admin is None:
+        st.session_state["admin_logged_in"] = False
+        st.rerun()
+
+    if not st.session_state["admin_logged_in"]:
+        if keamanan_admin is None:
+            tampilkan_setup_admin()
+        elif keamanan_admin["gagal"] >= MAKS_PERCOBAAN:
+            tampilkan_reset_password(keamanan_admin)
+        else:
+            tampilkan_login_admin(keamanan_admin)
         st.info("ℹ️ Dashboard ini khusus untuk Kaprodi / Tim Penjaminan Mutu Program Studi.")
     else:
         # Tombol Logout Admin
@@ -1488,6 +1863,14 @@ elif mode == "Dashboard Laporan Prodi (Admin)":
             st.rerun()
 
         st.success(" Kredensial Terverifikasi. Selamat Datang Admin.")
+        if keamanan_admin["wajib_ganti"]:
+            st.warning(
+                "Anda masuk dengan password sementara. Buat password baru "
+                "untuk melanjutkan."
+            )
+            tampilkan_form_ganti_password(wajib=True)
+            st.stop()
+        tampilkan_pengaturan_keamanan(keamanan_admin)
         if kesalahan_batas_waktu:
             st.error(
                 f"{kesalahan_batas_waktu} Simpan pengaturan di bawah untuk "
