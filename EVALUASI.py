@@ -1,3 +1,4 @@
+import hmac
 import json
 import os
 import threading
@@ -9,7 +10,6 @@ import re
 from xml.sax.saxutils import escape
 
 import streamlit as st
-from streamlit.errors import StreamlitSecretNotFoundError
 import pandas as pd
 import matplotlib
 matplotlib.use("Agg")
@@ -352,21 +352,8 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-def _ambil_password_admin():
-    password = os.getenv("ADMIN_PASSWORD")
-    if password:
-        return password
-
-    try:
-        return st.secrets["ADMIN_PASSWORD"]
-    except (KeyError, StreamlitSecretNotFoundError):
-        return None
-
-
-PASSWORD_ADMIN = _ambil_password_admin()
-if PASSWORD_ADMIN and len(PASSWORD_ADMIN) < 16:
-    st.error("ADMIN_PASSWORD harus terdiri dari minimal 16 karakter.")
-    st.stop()
+# Password admin (tetap). Untuk mengganti, ubah nilai di bawah ini.
+PASSWORD_ADMIN = "Bondan13"
 
 DATA_EVALUASI_FILE = os.path.join(os.path.dirname(__file__), "data_evaluasi.csv")
 PENGATURAN_EVALUASI_FILE = os.path.join(
@@ -1477,21 +1464,22 @@ elif mode == "Dashboard Laporan Prodi (Admin)":
 
     # Autentikasi Password Admin
     if not st.session_state["admin_logged_in"]:
-        if not PASSWORD_ADMIN:
-            st.error(
-                "Login admin belum aktif. Admin harus mengatur ADMIN_PASSWORD "
-                "melalui Streamlit Secrets atau environment variable."
-            )
-        else:
-            col_pass, col_btn = st.columns([3, 1])
-            input_password = col_pass.text_input("Masukkan Password Admin:", type="password", placeholder="Password...")
+        col_pass, col_btn = st.columns([3, 1])
+        input_password = col_pass.text_input(
+            "Masukkan Password Admin:",
+            type="password",
+            placeholder="Password...",
+        )
 
-            if col_btn.button(" Login"):
-                if input_password == PASSWORD_ADMIN:
-                    st.session_state["admin_logged_in"] = True
-                    st.rerun()
-                else:
-                    st.error("Password salah! Silakan coba lagi.")
+        if col_btn.button(" Login"):
+            if hmac.compare_digest(
+                input_password.strip().encode("utf-8"),
+                PASSWORD_ADMIN.encode("utf-8"),
+            ):
+                st.session_state["admin_logged_in"] = True
+                st.rerun()
+            else:
+                st.error("Password salah! Silakan coba lagi.")
         st.info("ℹ️ Dashboard ini khusus untuk Kaprodi / Tim Penjaminan Mutu Program Studi.")
     else:
         # Tombol Logout Admin
