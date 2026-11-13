@@ -34,7 +34,7 @@ from reportlab.platypus import (
 
 # Config Halaman
 st.set_page_config(
-    page_title="Form Evaluasi Pembelajaran S1 Sistem Informasi UDBS",
+    page_title="Form Evaluasi Pembelajaran D4 Teknologi Rekayasa Perangkat Lunak",
     page_icon="📋",
     layout="wide",
 )
@@ -396,8 +396,8 @@ def _baca_keamanan_admin():
         with open(ADMIN_KEAMANAN_FILE, "r", encoding="utf-8") as file:
             data = json.load(file)
         data["email"] = str(data["email"])
-        for kunci in ("salt", "hash", "iterasi"):
-            data["password"][kunci]
+        if not all(kunci in data["password"] for kunci in ("salt", "hash", "iterasi")):
+            raise KeyError("password")
         data["gagal"] = int(data.get("gagal", 0))
         data["wajib_ganti"] = bool(data.get("wajib_ganti", False))
         data["reset_terakhir"] = data.get("reset_terakhir")
@@ -739,139 +739,41 @@ DATA_EVALUASI_LOCK = threading.Lock()
 ZONA_WAKTU_EVALUASI = "Asia/Jakarta"
 
 
-# Database Pemetaan Kelas -> Mata Kuliah & Dosen Pengampu dari Jadwal Kuliah FIK UDBS
+# Database Pemetaan Kelas -> Mata Kuliah & Dosen Pengampu dari Jadwal Kuliah Semester Ganjil 2026/2027 (Prodi TRPL)
 DATA_KELAS_JADWAL = {
-    "SI 26A1": [
-        {"matkul": "Pengantar Teknologi Informasi", "dosen": "Moh. Muhtarom, SE, S.Kom., M.Kom"},
-        {"matkul": "Sistem Operasi", "dosen": "Aprilisa Arum Sari, S.T, M.Kom"},
-        {"matkul": "Bahasa Inggris I", "dosen": "Marginingsih, S.Pd., M.Pd"},
-        {"matkul": "Matematika Dasar", "dosen": "Herliyani Hasanah, S.T., M.T"},
-        {"matkul": "Konsep Sistem Informasi", "dosen": "Sri Sumarlinda, M.Kom., PhD"},
-        {"matkul": "Sistem Informasi Manajemen", "dosen": "Agustina Srirahayu, S.Kom., M.Kom"},
-        {"matkul": "Algoritma dan Struktur Data", "dosen": "Pipin Widyaningsih, S.Kom., M.Kom"},
-        {"matkul": "Dasar Pemrograman", "dosen": "Triyono, M.Kom"}
+    "TRPL26A1": [
+        {"matkul": "Jaringan Komputer", "dosen": "Ridwan Dwi Irawan, M.Kom"},
+        {"matkul": "Pengantar Bisnis dan Manajemen", "dosen": "Drs. Tri Djoko Santoso, MM"},
+        {"matkul": "Algoritma dan Struktur Data", "dosen": "Vihi Atina, S.Kom., M.Kom"},
+        {"matkul": "Multimedia 1", "dosen": "Bondan Wahyu Pamekas, M.Kom"},
+        {"matkul": "Pengantar Sistem Informasi", "dosen": "Dr. Wijiyanto, S.Kom., M.Pd., M.Kom"},
+        {"matkul": "Sistem Basis Data", "dosen": "Sri Sumarlinda, S.Kom., M.Kom., PhD"},
+        {"matkul": "Aljabar Linier", "dosen": "Anisatul Farida, S.Pd, M.Pd"},
+        {"matkul": "Bahasa Inggris 1", "dosen": "Aris Hidayatulloh, S.Hum, M.A"}
     ],
-    "SI 26A2": [
-        {"matkul": "Sistem Operasi", "dosen": "Aprilisa Arum Sari, S.T, M.Kom"},
-        {"matkul": "Pengantar Teknologi Informasi", "dosen": "Moh. Muhtarom, SE, S.Kom., M.Kom"},
-        {"matkul": "Bahasa Inggris I", "dosen": "Marginingsih, S.Pd., M.Pd"},
-        {"matkul": "Sistem Informasi Manajemen", "dosen": "Agustina Srirahayu, S.Kom., M.Kom"},
-        {"matkul": "Matematika Dasar", "dosen": "Herliyani Hasanah, S.T., M.T"},
-        {"matkul": "Konsep Sistem Informasi", "dosen": "Sri Sumarlinda, M.Kom., PhD"},
-        {"matkul": "Algoritma dan Struktur Data", "dosen": "Pipin Widyaningsih, S.Kom., M.Kom"},
-        {"matkul": "Dasar Pemrograman", "dosen": "Sopingi, S.Kom., M.Kom"}
+    "TRPL25A1": [
+        {"matkul": "Pemrograman Berorientasi Objek", "dosen": "Pipin Widyaningsih, S.Kom., M.Kom"},
+        {"matkul": "Matematika Diskrit", "dosen": "Wiji Lestari, S.Si., M.Kom"},
+        {"matkul": "Analisis dan Desain Perangkat Lunak", "dosen": "Agustina Srirahayu, S.Kom., M.Kom"},
+        {"matkul": "Kewirausahaan 1", "dosen": "Sundari, SE., MM"},
+        {"matkul": "Pemrograman Web 1", "dosen": "Marta Ardiyanto, M.Kom"},
+        {"matkul": "Arsitektur dan Organisasi Komputer", "dosen": "Moh. Muhtarom, SE, S.Kom., M.Kom"},
+        {"matkul": "Bahasa Inggris 3", "dosen": "Aris Hidayatulloh, S.Hum, M.A"},
+        {"matkul": "Multimedia Animasi", "dosen": "Kurniawan Adi Saputra, S.Ds."}
     ],
-    "SI 25A1": [
-        {"matkul": "Sistem Basis Data", "dosen": "Hanifah Permatasari, M.Kom"},
-        {"matkul": "Statistika dan Probabilitas", "dosen": "Ratna Puspita Indah, S.Si, M.Pd"},
-        {"matkul": "Pemrograman Berorientasi Objek", "dosen": "Sopingi, S.Kom., M.Kom"},
-        {"matkul": "Desain & Manajemen Jaringan Komputer", "dosen": "Eko Purwanto, M.Kom., Ph.D"},
-        {"matkul": "Manajemen Sains", "dosen": "Wiji Lestari, S.Si., M.Kom"},
-        {"matkul": "Arsitektur Perusahaan", "dosen": "Intan Oktaviani, M.Kom"},
-        {"matkul": "Bahasa Inggris III", "dosen": "Anindhiasti Ayu K, S.Pd, M.Pd"},
-        {"matkul": "Metodologi Penelitian dan Penulisan Ilmiah", "dosen": "Vihi Atina, S.Kom., M.Kom"}
+    "TRPL24A1": [
+        {"matkul": "Pemrograman Web 2", "dosen": "Lubna, M.Kom"},
+        {"matkul": "Rekayasa Perangkat Lunak", "dosen": "Vihi Atina, S.Kom., M.Kom"},
+        {"matkul": "Kewirausahaan 2", "dosen": "Sundari, SE., MM"},
+        {"matkul": "Sinematografi", "dosen": "Ridwan Dwi Irawan, M.Kom"},
+        {"matkul": "Teknologi Game 1", "dosen": "Herin Dwibima Aprianto, M.Kom"},
+        {"matkul": "Keamanan Perangkat Lunak", "dosen": "Bondan Wahyu Pamekas, M.Kom"},
+        {"matkul": "Multimedia Animasi 2", "dosen": "Kurniawan Adi Saputra, S.Ds."}
     ],
-    "SI 25A2": [
-        {"matkul": "Statistika dan Probabilitas", "dosen": "Ratna Puspita Indah, S.Si, M.Pd"},
-        {"matkul": "Sistem Basis Data", "dosen": "Hanifah Permatasari, M.Kom"},
-        {"matkul": "Desain & Manajemen Jaringan Komputer", "dosen": "Eko Purwanto, M.Kom., Ph.D"},
-        {"matkul": "Pemrograman Berorientasi Objek", "dosen": "Sopingi, S.Kom., M.Kom"},
-        {"matkul": "Manajemen Sains", "dosen": "Ahmad Rifai, S.Kom., M.Kom"},
-        {"matkul": "Arsitektur Perusahaan", "dosen": "Intan Oktaviani, M.Kom"},
-        {"matkul": "Bahasa Inggris III", "dosen": "Anindhiasti Ayu K, S.Pd, M.Pd"},
-        {"matkul": "Metodologi Penelitian dan Penulisan Ilmiah", "dosen": "Vihi Atina, S.Kom., M.Kom"}
-    ],
-    "SI 25A3": [
-        {"matkul": "Desain & Manajemen Jaringan Komputer", "dosen": "Eko Purwanto, M.Kom., Ph.D"},
-        {"matkul": "Manajemen Sains", "dosen": "Ahmad Rifai, S.Kom., M.Kom"},
-        {"matkul": "Pemrograman Berorientasi Objek", "dosen": "Sopingi, S.Kom., M.Kom"},
-        {"matkul": "Sistem Basis Data", "dosen": "Pipin Widyaningsih, S.Kom., M.Kom"},
-        {"matkul": "Statistika dan Probabilitas", "dosen": "Ratna Puspita Indah, S.Si, M.Pd"},
-        {"matkul": "Arsitektur Perusahaan", "dosen": "Intan Oktaviani, M.Kom"},
-        {"matkul": "Metodologi Penelitian dan Penulisan Ilmiah", "dosen": "Vihi Atina, S.Kom., M.Kom"},
-        {"matkul": "Bahasa Inggris III", "dosen": "Anindhiasti Ayu K, S.Pd, M.Pd"}
-    ],
-    "SI 24A1": [
-        {"matkul": "Proyek Sistem Aplikasi", "dosen": "Marta Ardiyanto, M.Kom"},
-        {"matkul": "Manajemen Proyek Sistem Informasi", "dosen": "Wijiyanto, S.Kom., M.Pd., M.Kom"},
-        {"matkul": "Tata Kelola TI", "dosen": "Herin Dwibima Aprianto, M.Kom"},
-        {"matkul": "Interaksi Manusia dan Komputer", "dosen": "Aprilisa Arum Sari, S.T, M.Kom"},
-        {"matkul": "Agama", "dosen": "Dr. Nur Hadi, S.Pd.I., M.Ag"},
-        {"matkul": "Pancasila", "dosen": "Widi Nugrahaningsih, SH.,MH"},
-        {"matkul": "Kewarganegaraan", "dosen": "Peter Guntara, SH.,MH.Li"},
-        {"matkul": "Inovasi dan Kreatifitas", "dosen": "Hanifah Permatasari, M.Kom"},
-        {"matkul": "Bahasa Indonesia", "dosen": "Margaretha Evi Yuliana, S.S.,M.Si"}
-    ],
-    "SI 24A2": [
-        {"matkul": "Tata Kelola TI", "dosen": "Lubna, M.Kom"},
-        {"matkul": "Proyek Sistem Aplikasi", "dosen": "Marta Ardiyanto, M.Kom"},
-        {"matkul": "Manajemen Proyek Sistem Informasi", "dosen": "Sri Sumarlinda, S.Kom., M.Kom., PhD"},
-        {"matkul": "Interaksi Manusia dan Komputer", "dosen": "Aprilisa Arum Sari, S.T, M.Kom"},
-        {"matkul": "Agama", "dosen": "Dr. Nur Hadi, S.Pd.I., M.Ag"},
-        {"matkul": "Pancasila", "dosen": "Widi Nugrahaningsih, SH.,MH"},
-        {"matkul": "Kewarganegaraan", "dosen": "Peter Guntara, SH.,MH.Li"},
-        {"matkul": "Inovasi dan Kreatifitas", "dosen": "Hanifah Permatasari, M.Kom"},
-        {"matkul": "Bahasa Indonesia", "dosen": "Margaretha Evi Yuliana, S.S.,M.Si"}
-    ],
-    "SI 24A3": [
-        {"matkul": "Manajemen Proyek Sistem Informasi", "dosen": "Dr. Wijiyanto, S.Kom., M.Pd., M.Kom"},
-        {"matkul": "Tata Kelola TI", "dosen": "Lubna, M.Kom"},
-        {"matkul": "Proyek Sistem Aplikasi", "dosen": "Marta Ardiyanto, M.Kom"},
-        {"matkul": "Interaksi Manusia dan Komputer", "dosen": "Aprilisa Arum Sari, S.T, M.Kom"},
-        {"matkul": "Agama", "dosen": "Dr. Nur Hadi, S.Pd.I., M.Ag"},
-        {"matkul": "Pancasila", "dosen": "Widi Nugrahaningsih, SH.,MH"},
-        {"matkul": "Kewarganegaraan", "dosen": "Dr. Hery Dwi Utomo, SH.,MH"},
-        {"matkul": "Inovasi dan Kreatifitas", "dosen": "Aprilisa Arum Sari, S.T, M.Kom"},
-        {"matkul": "Bahasa Indonesia", "dosen": "Margaretha Evi Yuliana, S.S.,M.Si"}
-    ],
-    "SI 23A1": [
-        {"matkul": "Pengembangan Data", "dosen": "Aprilisa Arum Sari, S.T, M.Kom"},
-        {"matkul": "Audit SI", "dosen": "Ridwan Dwi Irawan, M.Kom"},
-        {"matkul": "Manajemen Hubungan Pelanggan", "dosen": "Hanifah Permatasari, M.Kom"}
-    ],
-    "SI 23A2": [
-        {"matkul": "Pengembangan Data", "dosen": "Aprilisa Arum Sari, S.T, M.Kom"},
-        {"matkul": "Audit SI", "dosen": "Ridwan Dwi Irawan, M.Kom"},
-        {"matkul": "Manajemen Hubungan Pelanggan", "dosen": "Hanifah Permatasari, M.Kom"}
-    ],
-    "SI 26B1": [
-        {"matkul": "Algoritma dan Struktur Data", "dosen": "Eko Purwanto, M.Kom., Ph.D"},
-        {"matkul": "Pengantar Teknologi Informasi", "dosen": "Moh. Muhtarom, SE, S.Kom., M.Kom"},
-        {"matkul": "Konsep Sistem Informasi", "dosen": "Dery Hartoro, S.T., M.Hum"},
-        {"matkul": "Sistem Informasi Manajemen", "dosen": "Muslim Heri K, M.Kom"},
-        {"matkul": "Sistem Operasi", "dosen": "Bondan Wahyu Pamekas, M.Kom"},
-        {"matkul": "Bahasa Inggris I", "dosen": "Aris Hidayatulloh, S.Hum, M.A"},
-        {"matkul": "Dasar Pemrograman", "dosen": "Sopingi, S.Kom., M.Kom"},
-        {"matkul": "Matematika Dasar", "dosen": "Arif Setiawan, S.Si, MT"}
-    ],
-    "SI 25B1": [
-        {"matkul": "Bahasa Inggris III", "dosen": "Aris Hidayatulloh, S.Hum, M.A"},
-        {"matkul": "Statistika dan Probabilitas", "dosen": "Nurmalitasari, S.Si., M.Pd, Ph.D"},
-        {"matkul": "Sistem Basis Data", "dosen": "Muslim Heri K, M.Kom"},
-        {"matkul": "Arsitektur Perusahaan", "dosen": "Herin Dwibima Aprianto, M.Kom"},
-        {"matkul": "Desain & Manajemen Jaringan Komputer", "dosen": "Andi Novianto, S.Kom., M.Hum., M.Kom"},
-        {"matkul": "Metodologi Penelitian dan Penulisan Ilmiah", "dosen": "Vihi Atina, S.Kom., M.Kom"},
-        {"matkul": "Manajemen Sains", "dosen": "Wiji Lestari, S.Si., M.Kom"},
-        {"matkul": "Pemrograman Berorientasi Objek", "dosen": "Sopingi, S.Kom., M.Kom"}
-    ],
-    "SI 24B1": [
-        {"matkul": "Pancasila", "dosen": "Dr. Aris Prio Agus Santoso, SH.,MH"},
-        {"matkul": "Bahasa Indonesia", "dosen": "Mira Erlinawati, M.Pd"},
-        {"matkul": "Tata Kelola TI", "dosen": "Lubna, M.Kom"},
-        {"matkul": "Agama", "dosen": "Dr. Nur Hadi, S.Pd.I., M.Ag"},
-        {"matkul": "Interaksi Manusia dan Komputer", "dosen": "Aprilisa Arum Sari, S.T, M.Kom"},
-        {"matkul": "Proyek Sistem Aplikasi", "dosen": "Marta Ardiyanto, M.Kom"},
-        {"matkul": "Kewarganegaraan", "dosen": "Dr. Hery Dwi Utomo, SH.,MH"},
-        {"matkul": "Manajemen Proyek Sistem Informasi", "dosen": "Yafie Miftah Imani, S.Kom., M.Eng"},
-        {"matkul": "Inovasi dan Kreatifitas", "dosen": "Hanifah Permatasari, M.Kom"}
-    ],
-    "SI 23B1": [
-        {"matkul": "Pengembangan Data", "dosen": "Aprilisa Arum Sari, S.T, M.Kom"},
-        {"matkul": "Audit SI", "dosen": "Yafie Miftah Imani, S.Kom., M.Eng"},
-        {"matkul": "Etika Profesi SI", "dosen": "Mira Erlinawati, M.Pd"},
-        {"matkul": "Visualisasi Data", "dosen": "Marta Ardiyanto, M.Kom"},
-        {"matkul": "Manajemen Hubungan Pelanggan", "dosen": "Dery Hartoro, S.T., M.Hum"},
-        {"matkul": "Manajemen Proyek Sistem Informasi", "dosen": "Wijiyanto, S.Kom., M.Pd., M.Kom"}
+    "TRPL23A1": [
+        {"matkul": "Visualisasi Animasi", "dosen": "Herin Dwibima Aprianto, M.Kom"},
+        {"matkul": "Multimedia Creative", "dosen": "Lubna, M.Kom"},
+        {"matkul": "Sistem Terdistribusi", "dosen": "Triyono, M.Kom"}
     ]
 }
 
@@ -1147,7 +1049,7 @@ def _safe_text(value):
 
 
 def _angkatan_dari_kelas(kelas):
-    match = re.match(r"^SI\s*(\d{2})", str(kelas).strip().upper())
+    match = re.match(r"^(?:SI|TRPL)\s*(\d{2})", str(kelas).strip().upper())
     return f"20{match.group(1)}" if match else "Tidak diketahui"
 
 
@@ -1320,7 +1222,7 @@ def generate_pdf_laporan_kelas(df_view, angkatan_label):
     story.append(
         Paragraph(
             "Laporan Evaluasi Pembelajaran<br/>"
-            "Program Studi S1 Sistem Informasi<br/>"
+            "Program Studi D4 Teknologi Rekayasa Perangkat Lunak<br/>"
             "Tahun Akademik 2026/2027 Ganjil",
             styles["Title"],
         )
@@ -1561,12 +1463,12 @@ def generate_pdf_laporan_kelas(df_view, angkatan_label):
         ],
         [
             Paragraph(
-                "Ketua Program Studi<br/>S1 Sistem Informasi",
+                "Ketua Program Studi<br/>D4 Teknologi Rekayasa Perangkat Lunak",
                 style_tanda_tangan,
             ),
             Spacer(1, 58),
             Paragraph(
-                "Hanifah Permatasari, S.Kom., M.Kom",
+                "Bondan Wahyu Pamekas, S.Kom., M.Kom",
                 style_tanda_tangan,
             ),
         ],
@@ -1640,7 +1542,7 @@ st.sidebar.markdown(
         <div class="sidebar-brand-mark">SI</div>
         <div class="sidebar-brand-copy">
             <strong>Evaluasi Akademik</strong>
-            <span>Program Studi Sistem Informasi</span>
+            <span>Program Studi D4 Teknologi Rekayasa Perangkat Lunak</span>
         </div>
     </div>
     """,
@@ -1685,7 +1587,7 @@ if mode == "Form Evaluasi Mahasiswa":
             </p>
             <div class="hero-badges">
                 <span class="hero-badge">🔒 Respon bersifat anonim</span>
-                <span class="hero-badge">📚 Program Studi S1 Sistem Informasi</span>
+                <span class="hero-badge">📚 Program Studi D4 Teknologi Rekayasa Perangkat Lunak</span>
             </div>
         </section>
         """,
@@ -1822,7 +1724,7 @@ elif mode == "Dashboard Laporan Prodi (Admin)":
             <div class="hero-eyebrow">Ruang administrasi · Fakultas Ilmu Komputer</div>
             <h1>Dashboard Evaluasi</h1>
             <p>
-                Evaluasi Pembelajaran Program Studi Sistem Informasi
+                Evaluasi Pembelajaran Program Studi D4 Teknologi Rekayasa Perangkat Lunak
             </p>
             <p>
                 Pantau hasil evaluasi pembelajaran dan unduh laporan program
@@ -2374,7 +2276,7 @@ st.markdown(
     """
     <div style="margin-top: 2rem; padding: 1rem 0; border-top: 1px solid #dce5ef;
                 color: #64748b; text-align: center; font-size: 0.85rem;">
-        Created by Aprilisa Arum Sari
+        Created by TRPL FIKOM UDB
     </div>
     """,
     unsafe_allow_html=True,
